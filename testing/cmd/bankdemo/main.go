@@ -20,6 +20,8 @@ import (
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
+
+	scopegrpc "go.undefinedlabs.com/scopeagent/instrumentation/grpc"
 )
 
 func main() {
@@ -86,7 +88,7 @@ func main() {
 
 func gRPCServer() *grpc.Server {
 	var reqCounter uint64
-	return grpc.NewServer(
+	return scopegrpc.NewServer(
 		grpc.UnaryInterceptor(func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
 			reqID := atomic.AddUint64(&reqCounter, 1)
 			var client string

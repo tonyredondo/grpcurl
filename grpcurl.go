@@ -32,6 +32,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
+
+	scopegrpc "go.undefinedlabs.com/scopeagent/instrumentation/grpc"
 )
 
 // ListServices uses the given descriptor source to return a sorted list of fully-qualified
@@ -643,6 +645,7 @@ func BlockingDial(ctx context.Context, network, address string, creds credential
 		} else {
 			opts = append(opts, grpc.WithTransportCredentials(creds))
 		}
+		opts = append(opts, scopegrpc.GetClientInterceptors()...)
 		conn, err := grpc.DialContext(ctx, address, opts...)
 		var res interface{}
 		if err != nil {

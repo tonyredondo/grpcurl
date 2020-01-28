@@ -20,6 +20,8 @@ import (
 
 	"github.com/fullstorydev/grpcurl"
 	grpcurl_testing "github.com/fullstorydev/grpcurl/testing"
+
+	scopegrpc "go.undefinedlabs.com/scopeagent/instrumentation/grpc"
 )
 
 var (
@@ -94,7 +96,7 @@ func main() {
 	}
 	fmt.Printf("Listening on %v\n", l.Addr())
 
-	svr := grpc.NewServer(opts...)
+	svr := scopegrpc.NewServer(opts...)
 
 	grpc_testing.RegisterTestServiceServer(svr, grpcurl_testing.TestServer{})
 	if !*noreflect {

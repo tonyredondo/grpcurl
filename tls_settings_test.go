@@ -14,6 +14,8 @@ import (
 
 	. "github.com/fullstorydev/grpcurl"
 	grpcurl_testing "github.com/fullstorydev/grpcurl/testing"
+
+	scopegrpc "go.undefinedlabs.com/scopeagent/instrumentation/grpc"
 )
 
 func TestPlainText(t *testing.T) {
@@ -322,7 +324,7 @@ func createTestServerAndClient(serverCreds, clientCreds credentials.TransportCre
 	if serverCreds != nil {
 		svrOpts = []grpc.ServerOption{grpc.Creds(serverCreds)}
 	}
-	svr := grpc.NewServer(svrOpts...)
+	svr := scopegrpc.NewServer(svrOpts...)
 	grpc_testing.RegisterTestServiceServer(svr, grpcurl_testing.TestServer{})
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

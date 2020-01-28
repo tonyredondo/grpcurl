@@ -27,6 +27,8 @@ import (
 
 	. "github.com/fullstorydev/grpcurl"
 	grpcurl_testing "github.com/fullstorydev/grpcurl/testing"
+
+	scopegrpc "go.undefinedlabs.com/scopeagent/instrumentation/grpc"
 )
 
 var (
@@ -62,7 +64,7 @@ func TestMain(m *testing.M) {
 	}
 
 	// Create a server that includes the reflection service
-	svrReflect := grpc.NewServer()
+	svrReflect := scopegrpc.NewServer()
 	grpc_testing.RegisterTestServiceServer(svrReflect, grpcurl_testing.TestServer{})
 	reflection.Register(svrReflect)
 	var portReflect int
@@ -77,8 +79,10 @@ func TestMain(m *testing.M) {
 	// And a corresponding client
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	opts := []grpc.DialOption{grpc.WithInsecure(), grpc.WithBlock()}
+	opts = append(opts, scopegrpc.GetClientInterceptors()...)
 	if ccReflect, err = grpc.DialContext(ctx, fmt.Sprintf("127.0.0.1:%d", portReflect),
-		grpc.WithInsecure(), grpc.WithBlock()); err != nil {
+		opts...); err != nil {
 		panic(err)
 	}
 	defer ccReflect.Close()
@@ -88,7 +92,7 @@ func TestMain(m *testing.M) {
 	sourceReflect = DescriptorSourceFromServer(context.Background(), refClient)
 
 	// Also create a server that does *not* include the reflection service
-	svrProtoset := grpc.NewServer()
+	svrProtoset := scopegrpc.NewServer()
 	grpc_testing.RegisterTestServiceServer(svrProtoset, grpcurl_testing.TestServer{})
 	var portProtoset int
 	if l, err := net.Listen("tcp", "127.0.0.1:0"); err != nil {
@@ -102,8 +106,10 @@ func TestMain(m *testing.M) {
 	// And a corresponding client
 	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	opts = []grpc.DialOption{grpc.WithInsecure(), grpc.WithBlock()}
+	opts = append(opts, scopegrpc.GetClientInterceptors()...)
 	if ccNoReflect, err = grpc.DialContext(ctx, fmt.Sprintf("127.0.0.1:%d", portProtoset),
-		grpc.WithInsecure(), grpc.WithBlock()); err != nil {
+		opts...); err != nil {
 		panic(err)
 	}
 	defer ccNoReflect.Close()

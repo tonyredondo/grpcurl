@@ -29,23 +29,25 @@ import (
 	grpcurl_testing "github.com/fullstorydev/grpcurl/testing"
 
 	scopegrpc "go.undefinedlabs.com/scopeagent/instrumentation/grpc"
+	"go.undefinedlabs.com/scopeagent"
+	"go.undefinedlabs.com/scopeagent/agent"
 )
 
 var (
-	sourceProtoset   DescriptorSource
-	sourceProtoFiles DescriptorSource
-	ccNoReflect      *grpc.ClientConn
+	sourceProtoset		DescriptorSource
+	sourceProtoFiles	DescriptorSource
+	ccNoReflect		*grpc.ClientConn
 
-	sourceReflect DescriptorSource
-	ccReflect     *grpc.ClientConn
+	sourceReflect	DescriptorSource
+	ccReflect	*grpc.ClientConn
 
-	descSources []descSourceCase
+	descSources	[]descSourceCase
 )
 
 type descSourceCase struct {
-	name        string
-	source      DescriptorSource
-	includeRefl bool
+	name		string
+	source		DescriptorSource
+	includeRefl	bool
 }
 
 // NB: These tests intentionally use the deprecated InvokeRpc since that
@@ -120,7 +122,7 @@ func TestMain(m *testing.M) {
 		{"reflect", sourceReflect, true},
 	}
 
-	os.Exit(m.Run())
+	os.Exit(scopeagent.Run(m, agent.WithSetGlobalTracer()))
 }
 
 func TestServerDoesNotSupportReflection(t *testing.T) {
@@ -169,8 +171,9 @@ func TestProtosetWithImports(t *testing.T) {
 }
 
 func TestListServices(t *testing.T) {
+	test := scopeagent.GetTest(t)
 	for _, ds := range descSources {
-		t.Run(ds.name, func(t *testing.T) {
+		test.Run(ds.name, func(t *testing.T) {
 			doTestListServices(t, ds.source, ds.includeRefl)
 		})
 	}
@@ -196,8 +199,9 @@ func doTestListServices(t *testing.T, source DescriptorSource, includeReflection
 }
 
 func TestListMethods(t *testing.T) {
+	test := scopeagent.GetTest(t)
 	for _, ds := range descSources {
-		t.Run(ds.name, func(t *testing.T) {
+		test.Run(ds.name, func(t *testing.T) {
 			doTestListMethods(t, ds.source, ds.includeRefl)
 		})
 	}
@@ -252,9 +256,10 @@ func TestGetAllFiles(t *testing.T) {
 	// server reflection picks up filename from linked in Go package,
 	// which indicates "grpc_testing/test.proto", not our local copy.
 	expectedFilesWithReflection := []string{"grpc_reflection_v1alpha/reflection.proto", "grpc_testing/test.proto"}
+	test := scopeagent.GetTest(t)
 
 	for _, ds := range descSources {
-		t.Run(ds.name, func(t *testing.T) {
+		test.Run(ds.name, func(t *testing.T) {
 			files, err := GetAllFiles(ds.source)
 			if err != nil {
 				t.Fatalf("failed to get all files: %v", err)
@@ -293,7 +298,7 @@ func TestGetAllFiles(t *testing.T) {
 		"testing/test.proto",
 	}
 	for _, ds := range otherDescSources {
-		t.Run(ds.name, func(t *testing.T) {
+		test.Run(ds.name, func(t *testing.T) {
 			files, err := GetAllFiles(ds.source)
 			if err != nil {
 				t.Fatalf("failed to get all files: %v", err)
@@ -314,7 +319,7 @@ func TestExpandHeaders(t *testing.T) {
 	os.Setenv("TEST_VAR", "value6")
 	os.Setenv("EMPTY", "")
 	expectedHeaders := map[string]bool{"key1: value": true, "key2: bar": true, "key3: ${woo": true, "key4: woo}": true,
-		"key5: value5": true, "key6: value6": true, "value5: value6": true, "key8: ": true}
+		"key5: value5":	true, "key6: value6": true, "value5: value6": true, "key8: ": true}
 
 	outHeaders, err := ExpandHeaders(inHeaders)
 	if err != nil {
@@ -387,8 +392,9 @@ func TestMakeTemplateKnownTypes(t *testing.T) {
 }
 
 func TestDescribe(t *testing.T) {
+	test := scopeagent.GetTest(t)
 	for _, ds := range descSources {
-		t.Run(ds.name, func(t *testing.T) {
+		test.Run(ds.name, func(t *testing.T) {
 			doTestDescribe(t, ds.source)
 		})
 	}
@@ -447,18 +453,18 @@ const (
 	// type == COMPRESSABLE, but that is default (since it has
 	// numeric value == 0) and thus doesn't actually get included
 	// on the wire
-	payload1 = `{
+	payload1	= `{
   "payload": {
     "body": "SXQncyBCdXNpbmVzcyBUaW1l"
   }
 }`
-	payload2 = `{
+	payload2	= `{
   "payload": {
     "type": "RANDOM",
     "body": "Rm91eCBkdSBGYUZh"
   }
 }`
-	payload3 = `{
+	payload3	= `{
   "payload": {
     "type": "UNCOMPRESSABLE",
     "body": "SGlwaG9wb3BvdGFtdXMgdnMuIFJoeW1lbm9jZXJvcw=="
@@ -475,8 +481,9 @@ func getCC(includeRefl bool) *grpc.ClientConn {
 }
 
 func TestUnary(t *testing.T) {
+	test := scopeagent.GetTest(t)
 	for _, ds := range descSources {
-		t.Run(ds.name, func(t *testing.T) {
+		test.Run(ds.name, func(t *testing.T) {
 			doTestUnary(t, getCC(ds.includeRefl), ds.source)
 		})
 	}
@@ -507,8 +514,9 @@ func doTestUnary(t *testing.T, cc *grpc.ClientConn, source DescriptorSource) {
 }
 
 func TestClientStream(t *testing.T) {
+	test := scopeagent.GetTest(t)
 	for _, ds := range descSources {
-		t.Run(ds.name, func(t *testing.T) {
+		test.Run(ds.name, func(t *testing.T) {
 			doTestClientStream(t, getCC(ds.includeRefl), ds.source)
 		})
 	}
@@ -552,8 +560,9 @@ func doTestClientStream(t *testing.T, cc *grpc.ClientConn, source DescriptorSour
 }
 
 func TestServerStream(t *testing.T) {
+	test := scopeagent.GetTest(t)
 	for _, ds := range descSources {
-		t.Run(ds.name, func(t *testing.T) {
+		test.Run(ds.name, func(t *testing.T) {
 			doTestServerStream(t, getCC(ds.includeRefl), ds.source)
 		})
 	}
@@ -561,7 +570,7 @@ func TestServerStream(t *testing.T) {
 
 func doTestServerStream(t *testing.T, cc *grpc.ClientConn, source DescriptorSource) {
 	req := &grpc_testing.StreamingOutputCallRequest{
-		ResponseType: grpc_testing.PayloadType_COMPRESSABLE,
+		ResponseType:	grpc_testing.PayloadType_COMPRESSABLE,
 		ResponseParameters: []*grpc_testing.ResponseParameters{
 			{Size: 10}, {Size: 20}, {Size: 30}, {Size: 40}, {Size: 50},
 		},
@@ -614,8 +623,9 @@ func doTestServerStream(t *testing.T, cc *grpc.ClientConn, source DescriptorSour
 }
 
 func TestHalfDuplexStream(t *testing.T) {
+	test := scopeagent.GetTest(t)
 	for _, ds := range descSources {
-		t.Run(ds.name, func(t *testing.T) {
+		test.Run(ds.name, func(t *testing.T) {
 			doTestHalfDuplexStream(t, getCC(ds.includeRefl), ds.source)
 		})
 	}
@@ -659,8 +669,9 @@ func doTestHalfDuplexStream(t *testing.T, cc *grpc.ClientConn, source Descriptor
 }
 
 func TestFullDuplexStream(t *testing.T) {
+	test := scopeagent.GetTest(t)
 	for _, ds := range descSources {
-		t.Run(ds.name, func(t *testing.T) {
+		test.Run(ds.name, func(t *testing.T) {
 			doTestFullDuplexStream(t, getCC(ds.includeRefl), ds.source)
 		})
 	}
@@ -731,18 +742,18 @@ func doTestFullDuplexStream(t *testing.T, cc *grpc.ClientConn, source Descriptor
 }
 
 type handler struct {
-	method            *desc.MethodDescriptor
-	methodCount       int
-	reqHeaders        metadata.MD
-	reqHeadersCount   int
-	reqMessages       []string
-	reqMessagesCount  int
-	respHeaders       metadata.MD
-	respHeadersCount  int
-	respMessages      []string
-	respTrailers      metadata.MD
-	respStatus        *status.Status
-	respTrailersCount int
+	method			*desc.MethodDescriptor
+	methodCount		int
+	reqHeaders		metadata.MD
+	reqHeadersCount		int
+	reqMessages		[]string
+	reqMessagesCount	int
+	respHeaders		metadata.MD
+	respHeadersCount	int
+	respMessages		[]string
+	respTrailers		metadata.MD
+	respStatus		*status.Status
+	respTrailersCount	int
 }
 
 func (h *handler) getRequestData() ([]byte, error) {

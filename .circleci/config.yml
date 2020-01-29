@@ -6,6 +6,7 @@ orbs:
 workflows:
   scope_test:
     jobs:
+      - run: echo 'CIRCLE_WORKING_DIRECTORY="${CIRCLE_WORKING_DIRECTORY/#\~/$HOME}"' >> $BASH_ENV
       - scope/test:
           dsn: $SCOPE_DSN
           auto-instrument: false

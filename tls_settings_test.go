@@ -2,6 +2,7 @@ package grpcurl_test
 
 import (
 	"fmt"
+	"go.undefinedlabs.com/scopeagent"
 	"net"
 	"strings"
 	"testing"
@@ -19,7 +20,7 @@ import (
 )
 
 func TestPlainText(t *testing.T) {
-	e, err := createTestServerAndClient(nil, nil)
+	e, err := createTestServerAndClient(t, nil, nil)
 	if err != nil {
 		t.Fatalf("failed to setup server and client: %v", err)
 	}
@@ -38,7 +39,7 @@ func TestBasicTLS(t *testing.T) {
 		t.Fatalf("failed to create server creds: %v", err)
 	}
 
-	e, err := createTestServerAndClient(serverCreds, clientCreds)
+	e, err := createTestServerAndClient(t, serverCreds, clientCreds)
 	if err != nil {
 		t.Fatalf("failed to setup server and client: %v", err)
 	}
@@ -57,7 +58,7 @@ func TestInsecureClientTLS(t *testing.T) {
 		t.Fatalf("failed to create server creds: %v", err)
 	}
 
-	e, err := createTestServerAndClient(serverCreds, clientCreds)
+	e, err := createTestServerAndClient(t, serverCreds, clientCreds)
 	if err != nil {
 		t.Fatalf("failed to setup server and client: %v", err)
 	}
@@ -76,7 +77,7 @@ func TestClientCertTLS(t *testing.T) {
 		t.Fatalf("failed to create server creds: %v", err)
 	}
 
-	e, err := createTestServerAndClient(serverCreds, clientCreds)
+	e, err := createTestServerAndClient(t, serverCreds, clientCreds)
 	if err != nil {
 		t.Fatalf("failed to setup server and client: %v", err)
 	}
@@ -95,7 +96,7 @@ func TestRequireClientCertTLS(t *testing.T) {
 		t.Fatalf("failed to create server creds: %v", err)
 	}
 
-	e, err := createTestServerAndClient(serverCreds, clientCreds)
+	e, err := createTestServerAndClient(t, serverCreds, clientCreds)
 	if err != nil {
 		t.Fatalf("failed to setup server and client: %v", err)
 	}
@@ -116,7 +117,7 @@ func TestBrokenTLS_ClientPlainText(t *testing.T) {
 	var e testEnv
 	failCount := 0
 	for {
-		e, err = createTestServerAndClient(serverCreds, nil)
+		e, err = createTestServerAndClient(t, serverCreds, nil)
 		if err == nil {
 			// success!
 			defer e.Close()
@@ -171,7 +172,7 @@ func TestBrokenTLS_ServerPlainText(t *testing.T) {
 		t.Fatalf("failed to create server creds: %v", err)
 	}
 
-	e, err := createTestServerAndClient(nil, clientCreds)
+	e, err := createTestServerAndClient(t, nil, clientCreds)
 	if err == nil {
 		t.Fatal("expecting TLS failure setting up server and client")
 		e.Close()
@@ -191,7 +192,7 @@ func TestBrokenTLS_ServerUsesWrongCert(t *testing.T) {
 		t.Fatalf("failed to create server creds: %v", err)
 	}
 
-	e, err := createTestServerAndClient(serverCreds, clientCreds)
+	e, err := createTestServerAndClient(t, serverCreds, clientCreds)
 	if err == nil {
 		t.Fatal("expecting TLS failure setting up server and client")
 		e.Close()
@@ -211,7 +212,7 @@ func TestBrokenTLS_ClientHasExpiredCert(t *testing.T) {
 		t.Fatalf("failed to create server creds: %v", err)
 	}
 
-	e, err := createTestServerAndClient(serverCreds, clientCreds)
+	e, err := createTestServerAndClient(t, serverCreds, clientCreds)
 	if err == nil {
 		t.Fatal("expecting TLS failure setting up server and client")
 		e.Close()
@@ -231,7 +232,7 @@ func TestBrokenTLS_ServerHasExpiredCert(t *testing.T) {
 		t.Fatalf("failed to create server creds: %v", err)
 	}
 
-	e, err := createTestServerAndClient(serverCreds, clientCreds)
+	e, err := createTestServerAndClient(t, serverCreds, clientCreds)
 	if err == nil {
 		t.Fatal("expecting TLS failure setting up server and client")
 		e.Close()
@@ -251,7 +252,7 @@ func TestBrokenTLS_ClientNotTrusted(t *testing.T) {
 		t.Fatalf("failed to create server creds: %v", err)
 	}
 
-	e, err := createTestServerAndClient(serverCreds, clientCreds)
+	e, err := createTestServerAndClient(t, serverCreds, clientCreds)
 	if err == nil {
 		t.Fatal("expecting TLS failure setting up server and client")
 		e.Close()
@@ -271,7 +272,7 @@ func TestBrokenTLS_ServerNotTrusted(t *testing.T) {
 		t.Fatalf("failed to create server creds: %v", err)
 	}
 
-	e, err := createTestServerAndClient(serverCreds, clientCreds)
+	e, err := createTestServerAndClient(t, serverCreds, clientCreds)
 	if err == nil {
 		t.Fatal("expecting TLS failure setting up server and client")
 		e.Close()
@@ -291,7 +292,7 @@ func TestBrokenTLS_RequireClientCertButNonePresented(t *testing.T) {
 		t.Fatalf("failed to create server creds: %v", err)
 	}
 
-	e, err := createTestServerAndClient(serverCreds, clientCreds)
+	e, err := createTestServerAndClient(t, serverCreds, clientCreds)
 	if err == nil {
 		t.Fatal("expecting TLS failure setting up server and client")
 		e.Close()
@@ -303,7 +304,7 @@ func TestBrokenTLS_RequireClientCertButNonePresented(t *testing.T) {
 
 func simpleTest(t *testing.T, cc *grpc.ClientConn) {
 	cl := grpc_testing.NewTestServiceClient(cc)
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(scopeagent.GetContextFromTest(t), 3*time.Second)
 	defer cancel()
 	_, err := cl.UnaryCall(ctx, &grpc_testing.SimpleRequest{}, grpc.WaitForReady(true))
 	if err != nil {
@@ -311,7 +312,7 @@ func simpleTest(t *testing.T, cc *grpc.ClientConn) {
 	}
 }
 
-func createTestServerAndClient(serverCreds, clientCreds credentials.TransportCredentials) (testEnv, error) {
+func createTestServerAndClient(t *testing.T, serverCreds, clientCreds credentials.TransportCredentials) (testEnv, error) {
 	var e testEnv
 	completed := false
 	defer func() {
@@ -333,7 +334,7 @@ func createTestServerAndClient(serverCreds, clientCreds credentials.TransportCre
 	port := l.Addr().(*net.TCPAddr).Port
 	go svr.Serve(l)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(scopeagent.GetContextFromTest(t), 3*time.Second)
 	defer cancel()
 
 	cc, err := BlockingDial(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", port), clientCreds)

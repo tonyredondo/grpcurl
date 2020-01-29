@@ -28,26 +28,52 @@ import (
 	. "github.com/fullstorydev/grpcurl"
 	grpcurl_testing "github.com/fullstorydev/grpcurl/testing"
 
-	scopegrpc "go.undefinedlabs.com/scopeagent/instrumentation/grpc"
 	"go.undefinedlabs.com/scopeagent"
 	"go.undefinedlabs.com/scopeagent/agent"
+	scopegrpc "go.undefinedlabs.com/scopeagent/instrumentation/grpc"
+	"go.undefinedlabs.com/scopeagent/instrumentation/logging"
+	scopetesting "go.undefinedlabs.com/scopeagent/instrumentation/testing"
 )
 
 var (
-	sourceProtoset		DescriptorSource
-	sourceProtoFiles	DescriptorSource
-	ccNoReflect		*grpc.ClientConn
+	sourceProtoset   DescriptorSource
+	sourceProtoFiles DescriptorSource
+	ccNoReflect      *grpc.ClientConn
 
-	sourceReflect	DescriptorSource
-	ccReflect	*grpc.ClientConn
+	sourceReflect DescriptorSource
+	ccReflect     *grpc.ClientConn
 
-	descSources	[]descSourceCase
+	descSources []descSourceCase
 )
 
 type descSourceCase struct {
-	name		string
-	source		DescriptorSource
-	includeRefl	bool
+	name        string
+	source      DescriptorSource
+	includeRefl bool
+}
+
+var defaultAgent *agent.Agent
+
+// Prepare the scope agent before execution
+func scopePrepare(m *testing.M, opts ...agent.Option) {
+	opts = append(opts, agent.WithTestingModeEnabled())
+	newAgent, err := agent.NewAgent(opts...)
+	if err != nil {
+		return
+	}
+	logging.PatchStandardLogger()
+	scopetesting.Init(m)
+	scopetesting.SetDefaultPanicHandler(func(test *scopetesting.Test) {
+		if defaultAgent != nil {
+			_ = defaultAgent.Flush()
+			defaultAgent.PrintReport()
+		}
+	})
+	defaultAgent = newAgent
+}
+func scopeRun(m *testing.M) int {
+	defer defaultAgent.Stop()
+	return m.Run()
 }
 
 // NB: These tests intentionally use the deprecated InvokeRpc since that
@@ -55,6 +81,8 @@ type descSourceCase struct {
 // easily exercise both functions.
 
 func TestMain(m *testing.M) {
+	scopePrepare(m, agent.WithSetGlobalTracer())
+
 	var err error
 	sourceProtoset, err = DescriptorSourceFromProtoSets("testing/test.protoset")
 	if err != nil {
@@ -122,14 +150,14 @@ func TestMain(m *testing.M) {
 		{"reflect", sourceReflect, true},
 	}
 
-	os.Exit(scopeagent.Run(m, agent.WithSetGlobalTracer()))
+	os.Exit(scopeRun(m))
 }
 
 func TestServerDoesNotSupportReflection(t *testing.T) {
-	refClient := grpcreflect.NewClient(context.Background(), reflectpb.NewServerReflectionClient(ccNoReflect))
+	refClient := grpcreflect.NewClient(scopeagent.GetContextFromTest(t), reflectpb.NewServerReflectionClient(ccNoReflect))
 	defer refClient.Reset()
 
-	refSource := DescriptorSourceFromServer(context.Background(), refClient)
+	refSource := DescriptorSourceFromServer(scopeagent.GetContextFromTest(t), refClient)
 
 	_, err := ListServices(refSource)
 	if err != ErrReflectionNotSupported {
@@ -141,7 +169,7 @@ func TestServerDoesNotSupportReflection(t *testing.T) {
 		t.Errorf("ListMethods should have returned ErrReflectionNotSupported; instead got %v", err)
 	}
 
-	err = InvokeRpc(context.Background(), refSource, ccNoReflect, "FooService/Method", nil, nil, nil)
+	err = InvokeRpc(scopeagent.GetContextFromTest(t), refSource, ccNoReflect, "FooService/Method", nil, nil, nil)
 	// InvokeRpc wraps the error, so we just verify the returned error includes the right message
 	if err == nil || !strings.Contains(err.Error(), ErrReflectionNotSupported.Error()) {
 		t.Errorf("InvokeRpc should have returned ErrReflectionNotSupported; instead got %v", err)
@@ -319,7 +347,7 @@ func TestExpandHeaders(t *testing.T) {
 	os.Setenv("TEST_VAR", "value6")
 	os.Setenv("EMPTY", "")
 	expectedHeaders := map[string]bool{"key1: value": true, "key2: bar": true, "key3: ${woo": true, "key4: woo}": true,
-		"key5: value5":	true, "key6: value6": true, "value5: value6": true, "key8: ": true}
+		"key5: value5": true, "key6: value6": true, "value5: value6": true, "key8: ": true}
 
 	outHeaders, err := ExpandHeaders(inHeaders)
 	if err != nil {
@@ -453,18 +481,18 @@ const (
 	// type == COMPRESSABLE, but that is default (since it has
 	// numeric value == 0) and thus doesn't actually get included
 	// on the wire
-	payload1	= `{
+	payload1 = `{
   "payload": {
     "body": "SXQncyBCdXNpbmVzcyBUaW1l"
   }
 }`
-	payload2	= `{
+	payload2 = `{
   "payload": {
     "type": "RANDOM",
     "body": "Rm91eCBkdSBGYUZh"
   }
 }`
-	payload3	= `{
+	payload3 = `{
   "payload": {
     "type": "UNCOMPRESSABLE",
     "body": "SGlwaG9wb3BvdGFtdXMgdnMuIFJoeW1lbm9jZXJvcw=="
@@ -492,7 +520,7 @@ func TestUnary(t *testing.T) {
 func doTestUnary(t *testing.T, cc *grpc.ClientConn, source DescriptorSource) {
 	// Success
 	h := &handler{reqMessages: []string{payload1}}
-	err := InvokeRpc(context.Background(), source, cc, "grpc.testing.TestService/UnaryCall", makeHeaders(codes.OK), h, h.getRequestData)
+	err := InvokeRpc(scopeagent.GetContextFromTest(t), source, cc, "grpc.testing.TestService/UnaryCall", makeHeaders(codes.OK), h, h.getRequestData)
 	if err != nil {
 		t.Fatalf("unexpected error during RPC: %v", err)
 	}
@@ -505,7 +533,7 @@ func doTestUnary(t *testing.T, cc *grpc.ClientConn, source DescriptorSource) {
 
 	// Failure
 	h = &handler{reqMessages: []string{payload1}}
-	err = InvokeRpc(context.Background(), source, cc, "grpc.testing.TestService/UnaryCall", makeHeaders(codes.NotFound), h, h.getRequestData)
+	err = InvokeRpc(scopeagent.GetContextFromTest(t), source, cc, "grpc.testing.TestService/UnaryCall", makeHeaders(codes.NotFound), h, h.getRequestData)
 	if err != nil {
 		t.Fatalf("unexpected error during RPC: %v", err)
 	}
@@ -525,7 +553,7 @@ func TestClientStream(t *testing.T) {
 func doTestClientStream(t *testing.T, cc *grpc.ClientConn, source DescriptorSource) {
 	// Success
 	h := &handler{reqMessages: []string{payload1, payload2, payload3}}
-	err := InvokeRpc(context.Background(), source, cc, "grpc.testing.TestService/StreamingInputCall", makeHeaders(codes.OK), h, h.getRequestData)
+	err := InvokeRpc(scopeagent.GetContextFromTest(t), source, cc, "grpc.testing.TestService/StreamingInputCall", makeHeaders(codes.OK), h, h.getRequestData)
 	if err != nil {
 		t.Fatalf("unexpected error during RPC: %v", err)
 	}
@@ -542,7 +570,7 @@ func doTestClientStream(t *testing.T, cc *grpc.ClientConn, source DescriptorSour
 
 	// Fail fast (server rejects as soon as possible)
 	h = &handler{reqMessages: []string{payload1, payload2, payload3}}
-	err = InvokeRpc(context.Background(), source, cc, "grpc.testing.TestService/StreamingInputCall", makeHeaders(codes.InvalidArgument), h, h.getRequestData)
+	err = InvokeRpc(scopeagent.GetContextFromTest(t), source, cc, "grpc.testing.TestService/StreamingInputCall", makeHeaders(codes.InvalidArgument), h, h.getRequestData)
 	if err != nil {
 		t.Fatalf("unexpected error during RPC: %v", err)
 	}
@@ -551,7 +579,7 @@ func doTestClientStream(t *testing.T, cc *grpc.ClientConn, source DescriptorSour
 
 	// Fail late (server waits until stream is complete to reject)
 	h = &handler{reqMessages: []string{payload1, payload2, payload3}}
-	err = InvokeRpc(context.Background(), source, cc, "grpc.testing.TestService/StreamingInputCall", makeHeaders(codes.Internal, true), h, h.getRequestData)
+	err = InvokeRpc(scopeagent.GetContextFromTest(t), source, cc, "grpc.testing.TestService/StreamingInputCall", makeHeaders(codes.Internal, true), h, h.getRequestData)
 	if err != nil {
 		t.Fatalf("unexpected error during RPC: %v", err)
 	}
@@ -570,7 +598,7 @@ func TestServerStream(t *testing.T) {
 
 func doTestServerStream(t *testing.T, cc *grpc.ClientConn, source DescriptorSource) {
 	req := &grpc_testing.StreamingOutputCallRequest{
-		ResponseType:	grpc_testing.PayloadType_COMPRESSABLE,
+		ResponseType: grpc_testing.PayloadType_COMPRESSABLE,
 		ResponseParameters: []*grpc_testing.ResponseParameters{
 			{Size: 10}, {Size: 20}, {Size: 30}, {Size: 40}, {Size: 50},
 		},
@@ -582,7 +610,7 @@ func doTestServerStream(t *testing.T, cc *grpc.ClientConn, source DescriptorSour
 
 	// Success
 	h := &handler{reqMessages: []string{payload}}
-	err = InvokeRpc(context.Background(), source, cc, "grpc.testing.TestService/StreamingOutputCall", makeHeaders(codes.OK), h, h.getRequestData)
+	err = InvokeRpc(scopeagent.GetContextFromTest(t), source, cc, "grpc.testing.TestService/StreamingOutputCall", makeHeaders(codes.OK), h, h.getRequestData)
 	if err != nil {
 		t.Fatalf("unexpected error during RPC: %v", err)
 	}
@@ -605,7 +633,7 @@ func doTestServerStream(t *testing.T, cc *grpc.ClientConn, source DescriptorSour
 
 	// Fail fast (server rejects as soon as possible)
 	h = &handler{reqMessages: []string{payload}}
-	err = InvokeRpc(context.Background(), source, cc, "grpc.testing.TestService/StreamingOutputCall", makeHeaders(codes.Aborted), h, h.getRequestData)
+	err = InvokeRpc(scopeagent.GetContextFromTest(t), source, cc, "grpc.testing.TestService/StreamingOutputCall", makeHeaders(codes.Aborted), h, h.getRequestData)
 	if err != nil {
 		t.Fatalf("unexpected error during RPC: %v", err)
 	}
@@ -614,7 +642,7 @@ func doTestServerStream(t *testing.T, cc *grpc.ClientConn, source DescriptorSour
 
 	// Fail late (server waits until stream is complete to reject)
 	h = &handler{reqMessages: []string{payload}}
-	err = InvokeRpc(context.Background(), source, cc, "grpc.testing.TestService/StreamingOutputCall", makeHeaders(codes.AlreadyExists, true), h, h.getRequestData)
+	err = InvokeRpc(scopeagent.GetContextFromTest(t), source, cc, "grpc.testing.TestService/StreamingOutputCall", makeHeaders(codes.AlreadyExists, true), h, h.getRequestData)
 	if err != nil {
 		t.Fatalf("unexpected error during RPC: %v", err)
 	}
@@ -636,7 +664,7 @@ func doTestHalfDuplexStream(t *testing.T, cc *grpc.ClientConn, source Descriptor
 
 	// Success
 	h := &handler{reqMessages: reqs}
-	err := InvokeRpc(context.Background(), source, cc, "grpc.testing.TestService/HalfDuplexCall", makeHeaders(codes.OK), h, h.getRequestData)
+	err := InvokeRpc(scopeagent.GetContextFromTest(t), source, cc, "grpc.testing.TestService/HalfDuplexCall", makeHeaders(codes.OK), h, h.getRequestData)
 	if err != nil {
 		t.Fatalf("unexpected error during RPC: %v", err)
 	}
@@ -651,7 +679,7 @@ func doTestHalfDuplexStream(t *testing.T, cc *grpc.ClientConn, source Descriptor
 
 	// Fail fast (server rejects as soon as possible)
 	h = &handler{reqMessages: reqs}
-	err = InvokeRpc(context.Background(), source, cc, "grpc.testing.TestService/HalfDuplexCall", makeHeaders(codes.Canceled), h, h.getRequestData)
+	err = InvokeRpc(scopeagent.GetContextFromTest(t), source, cc, "grpc.testing.TestService/HalfDuplexCall", makeHeaders(codes.Canceled), h, h.getRequestData)
 	if err != nil {
 		t.Fatalf("unexpected error during RPC: %v", err)
 	}
@@ -660,7 +688,7 @@ func doTestHalfDuplexStream(t *testing.T, cc *grpc.ClientConn, source Descriptor
 
 	// Fail late (server waits until stream is complete to reject)
 	h = &handler{reqMessages: reqs}
-	err = InvokeRpc(context.Background(), source, cc, "grpc.testing.TestService/HalfDuplexCall", makeHeaders(codes.DataLoss, true), h, h.getRequestData)
+	err = InvokeRpc(scopeagent.GetContextFromTest(t), source, cc, "grpc.testing.TestService/HalfDuplexCall", makeHeaders(codes.DataLoss, true), h, h.getRequestData)
 	if err != nil {
 		t.Fatalf("unexpected error during RPC: %v", err)
 	}
@@ -693,7 +721,7 @@ func doTestFullDuplexStream(t *testing.T, cc *grpc.ClientConn, source Descriptor
 
 	// Success
 	h := &handler{reqMessages: reqs}
-	err := InvokeRpc(context.Background(), source, cc, "grpc.testing.TestService/FullDuplexCall", makeHeaders(codes.OK), h, h.getRequestData)
+	err := InvokeRpc(scopeagent.GetContextFromTest(t), source, cc, "grpc.testing.TestService/FullDuplexCall", makeHeaders(codes.OK), h, h.getRequestData)
 	if err != nil {
 		t.Fatalf("unexpected error during RPC: %v", err)
 	}
@@ -724,7 +752,7 @@ func doTestFullDuplexStream(t *testing.T, cc *grpc.ClientConn, source Descriptor
 
 	// Fail fast (server rejects as soon as possible)
 	h = &handler{reqMessages: reqs}
-	err = InvokeRpc(context.Background(), source, cc, "grpc.testing.TestService/FullDuplexCall", makeHeaders(codes.PermissionDenied), h, h.getRequestData)
+	err = InvokeRpc(scopeagent.GetContextFromTest(t), source, cc, "grpc.testing.TestService/FullDuplexCall", makeHeaders(codes.PermissionDenied), h, h.getRequestData)
 	if err != nil {
 		t.Fatalf("unexpected error during RPC: %v", err)
 	}
@@ -733,7 +761,7 @@ func doTestFullDuplexStream(t *testing.T, cc *grpc.ClientConn, source Descriptor
 
 	// Fail late (server waits until stream is complete to reject)
 	h = &handler{reqMessages: reqs}
-	err = InvokeRpc(context.Background(), source, cc, "grpc.testing.TestService/FullDuplexCall", makeHeaders(codes.ResourceExhausted, true), h, h.getRequestData)
+	err = InvokeRpc(scopeagent.GetContextFromTest(t), source, cc, "grpc.testing.TestService/FullDuplexCall", makeHeaders(codes.ResourceExhausted, true), h, h.getRequestData)
 	if err != nil {
 		t.Fatalf("unexpected error during RPC: %v", err)
 	}
@@ -742,18 +770,18 @@ func doTestFullDuplexStream(t *testing.T, cc *grpc.ClientConn, source Descriptor
 }
 
 type handler struct {
-	method			*desc.MethodDescriptor
-	methodCount		int
-	reqHeaders		metadata.MD
-	reqHeadersCount		int
-	reqMessages		[]string
-	reqMessagesCount	int
-	respHeaders		metadata.MD
-	respHeadersCount	int
-	respMessages		[]string
-	respTrailers		metadata.MD
-	respStatus		*status.Status
-	respTrailersCount	int
+	method            *desc.MethodDescriptor
+	methodCount       int
+	reqHeaders        metadata.MD
+	reqHeadersCount   int
+	reqMessages       []string
+	reqMessagesCount  int
+	respHeaders       metadata.MD
+	respHeadersCount  int
+	respMessages      []string
+	respTrailers      metadata.MD
+	respStatus        *status.Status
+	respTrailersCount int
 }
 
 func (h *handler) getRequestData() ([]byte, error) {
